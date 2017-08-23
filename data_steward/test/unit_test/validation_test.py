@@ -5,6 +5,7 @@ import cloudstorage
 from cloudstorage import cloudstorage_api  # stubbed by testbed
 from google.appengine.ext import testbed
 
+import gcs_utils
 from validation import main
 
 _FAKE_HPO = 'foo'
@@ -20,7 +21,7 @@ class ValidationTest(unittest.TestCase):
         self.testbed.init_urlfetch_stub()
         self.testbed.init_blobstore_stub()
         self.testbed.init_datastore_v3_stub()
-        self.gcs_path = main.hpo_gcs_path('foo')
+        self.gcs_path = gcs_utils.hpo_gcs_path('foo')
 
     def _write_cloud_csv(self, gcs_path, contents_str):
         with cloudstorage_api.open(gcs_path, mode='w') as cloud_file:
@@ -43,7 +44,7 @@ class ValidationTest(unittest.TestCase):
 
     @mock.patch('api_util.check_cron')
     def test_validate_missing_files_output(self, mock_check_cron):
-        gcs_path = main.hpo_gcs_path('foo')
+        gcs_path = gcs_utils.hpo_gcs_path('foo')
         url = main.PREFIX + 'ValidateHpoFiles/foo'
         expected_result_file = gcs_path + '/result.csv'
         main.app.testing = True  # enable exception propagation as described at https://goo.gl/LqDgnj
