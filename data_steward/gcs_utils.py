@@ -1,13 +1,13 @@
 """
-Wrappers around Google Cloud Storage API (adapted from https://goo.gl/dRKiYz)
+Wraps Google Cloud Storage JSON API (adapted from https://goo.gl/dRKiYz)
 """
+import mimetypes
 
 from google.appengine.api import app_identity
 import googleapiclient.discovery
-import os
-import StringIO
 
-from oauth2client.client import GoogleCredentials
+import os
+from io import BytesIO
 
 
 def get_hpo_bucket(hpo_id):
@@ -26,8 +26,7 @@ def hpo_gcs_path(hpo_id):
 
 
 def create_service():
-    credentials = GoogleCredentials.get_application_default()
-    return googleapiclient.discovery.build('storage', 'v1', credentials=credentials)
+    return googleapiclient.discovery.build('storage', 'v1')
 
 
 def list_bucket_dir(gcs_path):
@@ -53,24 +52,66 @@ def list_bucket_dir(gcs_path):
     return all_objects
 
 
-def get_object(bucket, filename):
-    # TODO accept gcs path
+def list_bucket(bucket):
+    """
+    Get metadata for each object within a bucket
+    :param bucket: name of the bucket
+    :return: list of metadata objects
+    """
     service = create_service()
-    req = service.objects().get_media(bucket=bucket, object=filename)
-    with StringIO.StringIO() as out_file:
-        downloader = googleapiclient.http.MediaIoBaseDownload(out_file, req)
-        done = False
-        while not done:
-            status, done = downloader.next_chunk()
-        return out_file.getvalue()
+    req = service.objects().list(bucket=bucket)
+    all_objects = []
+    while req:
+        resp = req.execute()
+        all_objects.extend(resp.get('items', []))
+        req = service.objects().list_next(req, resp)
+    return all_objects
 
 
-def upload_object(bucket, filename):
-    # TODO accept gcs path
+def get_object(bucket, name):
+    """
+    Download object from a bucket
+    :param bucket: the bucket containing the file
+    :param name: name of the file to download
+    :return: file contents (as text)
+    """
     service = create_service()
-    body = {'name': filename}
-    # http://g.co/dv/resources/api-libraries/documentation/storage/v1/python/latest/storage_v1.objects.html#insert
-    with open(filename, 'rb') as f:
-        media_body = googleapiclient.http.MediaIoBaseUpload(f, 'application/octet-stream')
-        req = service.objects().insert(bucket=bucket, body=body, media_body=media_body)
-        return req.execute()
+    req = service.objects().get_media(bucket=bucket, object=name)
+    out_file = BytesIO()
+    downloader = googleapiclient.http.MediaIoBaseDownload(out_file, req)
+    done = False
+    while not done:
+        status, done = downloader.next_chunk()
+    result = out_file.getvalue()
+    out_file.close()
+    return result
+
+
+def upload_object(bucket, name, fp):
+    """
+    Upload file to a GCS bucket
+    :param bucket: name of the bucket
+    :param name: name for the file
+    :param fp: a file-like object containing file contents
+    :return: metadata about the uploaded file
+    """
+    service = create_service()
+    body = {'name': name}
+    (mimetype, encoding) = mimetypes.guess_type(name)
+    media_body = googleapiclient.http.MediaIoBaseUpload(fp, mimetype)
+    req = service.objects().insert(bucket=bucket, body=body, media_body=media_body)
+    return req.execute()
+
+
+def delete_object(bucket, name):
+    """
+    Delete an object from a bucket
+    :param bucket: name of the bucket
+    :param name: name of the file in the bucket
+    :return: empty string
+    """
+    service = create_service()
+    req = service.objects().delete(bucket=bucket, object=name)
+    resp = req.execute()
+    # TODO return something useful
+    return resp
